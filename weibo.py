@@ -361,53 +361,70 @@ class Weibo(object):
                     sys.stdout.encoding, "ignore").decode(sys.stdout.encoding)
         return weibo
     def get_review(self,id):
+        max_id = ""
         try:
-            url = 'https://m.weibo.cn/api/comments/show?id=%s&page={}'% id
-            headers = {'User-Agent':'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3534.4 Safari/537.36',
-                   'cookie' :self.cookie 
-                       }
             i=0 # 评论的页数
-            comment_num=1 # 爬取的评论总数量
             while True:
-                req=requests.get(url=url.format(i),headers=headers)
+                if max_id=="":
+                    url = 'https://m.weibo.cn/comments/hotflow?id=%s&mid=%s&max_id_type=0'% (id, id)
+                else:
+                    url = 'https://m.weibo.cn/comments/hotflow?id=%s&mid=%s&max_id=%s&max_id_type=0'% (id, id, max_id)
+                headers = {'User-Agent':'Mozilla/5.0 (Windows NT 10.0; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/70.0.3534.4 Safari/537.36',
+                    'cookie' :self.cookie 
+                        }
+                
+                comment_num=1 # 爬取的评论总数量
+                req=requests.get(url,headers=headers)
                 comment_page=req.json()['data']['data']
                 if req.status_code==200:
-                    print('读取%s页的评论：'%i)
+                    print('读取%s页的评论：'%str(i+1))
                     for j in range(0,len(comment_page)):
-                        print('第%s条评论'%comment_num)
+                        # print('第%s条评论'%comment_num)
                         weibo_info = defaultdict(defaultdict)
-                        user=comment_page[j]
-                        weibo_info['user_id'] =  user['user']['id']      #用户id
-                        weibo_info['screen_name']=user['user']['screen_name']    #发表评论的用户名
+                        user = comment_page[j]
+                        weibo_info['user_id'] = user['user']['id']      #用户id
+                        weibo_info['screen_name'] = user['user']['screen_name']    #发表评论的用户名
                         weibo_info['id'] = user['id']     #微博文本的编号
                         weibo_info['bid'] = ''
-                        text=re.sub('<.*?>|回复<.*?>:|[\U00010000-\U0010ffff]|[\uD800-\uDBFF][\uDC00-\uDFFF]','',user['text'])
-                        text=re.sub('[\U00010000-\U0010ffff]|[\uD800-\uDBFF][\uDC00-\uDFFF]','',text)#去除评论中表情等的特殊字符
-                        text = re.sub('style="width:1em; height:1em;" />','',text)
+                        # text=re.sub('<.*?>|回复<.*?>:|[\U00010000-\U0010ffff]|[\uD800-\uDBFF][\uDC00-\uDFFF]','',user['text'])
+                        text = user['text']
+                        text = re.sub('<.*?alt=|回复<.*?alt=|src.*?png', '', text)
+                        # fliter_text =re.sub('[\U00010000-\U0010ffff]|[\uD800-\uDBFF][\uDC00-\uDFFF]','',text) # 去除评论中表情等的特殊字符
+                        """必须包含表情,且不能只有一个表情"""
+                        # if fliter_text != text and fliter_text != "": 
+                        text = re.sub('style.*?span>','',text)
+                        """做一个匹配"""
                         text = re.sub('\n','',text)
                         weibo_info['text'] = text
                         
-                        print(text)
+                        # print(text)
                         weibo_info['location'] = ''
-                        weibo_info['created_at']=user['created_at']#发表时间
+                        weibo_info['created_at'] = user['created_at']#发表时间
                         weibo_info['source'] = ''
-                        weibo_info['attitudes_count']=user['like_counts']#点赞数
-                        print('点赞数'+str(weibo_info['attitudes_count']))
+                        weibo_info['attitudes_count']=user['like_count']#点赞数
+                        # print('点赞数'+str(weibo_info['attitudes_count']))
                         weibo_info['comments_count'] = 0
                         weibo_info['reposts_count'] = 0
                         weibo_info['topics'] = ''
                         weibo_info['at_users'] = ''
                         
     
-                       
+                    
                         comment_num+=1
                         wb = weibo_info
+                        """这个地方可能需要进行修改，修改为可以对评论文本进行进一步处理的内容"""
                         if wb:
                             self.weibo.append(wb)
                             self.weibo_id_list.append(wb['id'])
                             self.got_count = self.got_count + 1
                             self.print_weibo(wb)
+                        # else:
+                        #     continue
                     i+=1
+                    result = req.json()
+                    max_id = result.get("data").get("max_id")
+                    if max_id==0:
+                        break
                     sleep(random.randint(2,4))  #防止反爬虫机制，停止一会~~~~
                 else:
                     break
@@ -416,8 +433,7 @@ class Weibo(object):
             print("Error: ", e)
             traceback.print_exc()
             
-            #https://m.weibo.cn/api/comments/show?id=4525451148756558&page=2
-
+            # https://m.weibo.cn/api/comments/show?id=4525451148756558&page=2
 
 
     def parse_weibo(self, weibo_info):
@@ -466,7 +482,7 @@ class Weibo(object):
 
     def print_one_weibo(self, weibo):
         """打印一条微博"""
-        print(u'微博id：%d' % weibo['id'])
+        print(u'微博id：%s' % weibo['id'])
         print(u'微博正文：%s' % weibo['text'])
         print(u'原始图片url：%s' % weibo['pics'])
         print(u'微博位置：%s' % weibo['location'])
@@ -496,7 +512,7 @@ class Weibo(object):
         weibo_id = weibo_info['id']
         if weibo_info['comments_count']>0: 
             self.get_review(weibo_id)
-        print("\n\n*************开始提取正文了1\n\n")
+        # print("\n\n*************开始提取正文了1\n\n")
         retweeted_status = weibo_info.get('retweeted_status')
         is_long = weibo_info['isLongText']
         if retweeted_status:  # 转发
@@ -526,6 +542,10 @@ class Weibo(object):
                 weibo = self.parse_weibo(weibo_info)
         weibo['created_at'] = self.standardize_date(
             weibo_info['created_at'])
+        # fliter_text =re.sub('[\U00010000-\U0010ffff]|[\uD800-\uDBFF][\uDC00-\uDFFF]','',weibo["text"]) # 去除评论中表情等的特殊字符
+        # """必须包含表情,且不能只有一个表情"""
+        # if fliter_text != weibo["text"] and fliter_text != "": 
+        #     weibo = None
         return weibo
         #except Exception as e:
             #print("Error: ", e)
@@ -552,28 +572,33 @@ class Weibo(object):
                 for w in weibos:
                     if w['card_type'] == 9:
                         wb = self.get_one_weibo(w)
-                        print("\n\n*************开始提取正文了2\n\n")
-                        if wb:
-                            #continue
-                            created_at = datetime.strptime(
-                                wb['created_at'], "%Y-%m-%d")
-                            since_date = datetime.strptime(
-                                self.since_date, "%Y-%m-%d")
-                            if created_at < since_date:        
-                                #created_at是微博创建时间，since_date是自己指定的微博最早发布时间
-                                if self.is_pinned_weibo(w):  
-                                    #判断是否为置顶微博，话题里置顶微博创建时间如果早于最早发布时间，那么跳过这一页循环
-                                    continue
-                                else:
-                                    return True
-                            if (not self.filter) or (
-                                    'retweet' not in wb.keys()):
-                                print("\n\n*************开始提取正文了3\n\n")
-                                self.weibo.append(wb)                                        #self.weibo = []  # 存储爬取到的所有微博信息
-                                self.weibo_id_list.append(wb['id'])
-                                self.got_count = self.got_count + 1
-                                print(self.got_count)
-                                self.print_weibo(wb)
+                        if wb==None:
+                            continue
+                        """接收判断是否为含表情的文本"""
+                        
+
+                        # print("\n\n*************开始提取正文了2\n\n")
+                        # if wb:
+                        #     #continue
+                        #     created_at = datetime.strptime(
+                        #         wb['created_at'], "%Y-%m-%d")
+                        #     since_date = datetime.strptime(
+                        #         self.since_date, "%Y-%m-%d")
+                        #     if created_at < since_date:        
+                        #         #created_at是微博创建时间，since_date是自己指定的微博最早发布时间
+                        #         if self.is_pinned_weibo(w):  
+                        #             #判断是否为置顶微博，话题里置顶微博创建时间如果早于最早发布时间，那么跳过这一页循环
+                        #             continue
+                        #         else:
+                        #             return True
+                        if (not self.filter) or (
+                                'retweet' not in wb.keys()):
+                            # print("\n\n*************开始提取正文了3\n\n")
+                            self.weibo.append(wb)                                        #self.weibo = []  # 存储爬取到的所有微博信息
+                            self.weibo_id_list.append(wb['id'])
+                            self.got_count = self.got_count + 1
+                            # print(self.got_count)
+                            # self.print_weibo(wb)
         except Exception as e:
             print("Error: ", e)
             traceback.print_exc()
@@ -810,7 +835,7 @@ class Weibo(object):
         """获取全部微博"""
         self.get_pagenum_info()
         page_count = self.get_page_count()
-        print(page_count)
+        # print(page_count)
         wrote_count = 0
         page1 = 0
         random_pages = random.randint(1, 5)
